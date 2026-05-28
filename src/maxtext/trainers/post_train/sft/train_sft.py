@@ -40,9 +40,59 @@ from typing import Any, Sequence
 
 from absl import app
 import os
+
+
+def _truthy_env(name: str) -> bool:
+  return os.environ.get(name, "").lower() in ("1", "true", "yes", "y")
+
+
+def _strip_xla_force_host_device_count(xla_flags: str) -> str:
+  return " ".join(
+      flag for flag in xla_flags.split() if not flag.startswith("--xla_force_host_platform_device_count")
+  )
+
+
+def _configure_runtime():
+  """Configure this entry point for single-process Kaggle/local execution."""
+  os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "0")
+
+  if not _truthy_env("MAXTEXT_FORCE_CPU"):
+    xla_flags = _strip_xla_force_host_device_count(os.environ.get("XLA_FLAGS", ""))
+    if xla_flags:
+      os.environ["XLA_FLAGS"] = xla_flags
+    else:
+      os.environ.pop("XLA_FLAGS", None)
+
+    if os.environ.get("JAX_PLATFORMS", "").lower() == "cpu":
+      os.environ.pop("JAX_PLATFORMS", None)
+    if os.environ.get("JAX_PLATFORM_NAME", "").lower() == "cpu":
+      os.environ.pop("JAX_PLATFORM_NAME", None)
+    return
+
+  cpu_device_count = os.environ.get("MAXTEXT_CPU_DEVICE_COUNT", "1")
+  xla_flags = _strip_xla_force_host_device_count(os.environ.get("XLA_FLAGS", ""))
+  if "--xla_force_host_platform_device_count" not in xla_flags:
+    xla_flags = f"{xla_flags} --xla_force_host_platform_device_count={cpu_device_count}".strip()
+
+  os.environ["XLA_FLAGS"] = xla_flags
+  os.environ["JAX_PLATFORMS"] = "cpu"
+  os.environ["JAX_PLATFORM_NAME"] = "cpu"
+  os.environ.setdefault("CUDA_VISIBLE_DEVICES", "")
+  os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "0")
+
+
+_configure_runtime()
+
 import jax
 import optax
-import pathwaysutils
+
+if _truthy_env("MAXTEXT_FORCE_CPU"):
+  jax.config.update("jax_platform_name", "cpu")
+
+try:
+  import pathwaysutils
+except ImportError:
+  pathwaysutils = None
 
 from flax import nnx
 from flax.linen import partitioning as nn_partitioning
@@ -295,10 +345,12 @@ def main(argv: Sequence[str]) -> None:
   Args:
     argv: Command-line arguments.
   """
-  pathwaysutils.initialize()
-  os.environ["TF_CPP_MIN_LOG_LEVEL"] = "0"
+  if pathwaysutils is not None:
+    max_logging.log("Skipping pathwaysutils.initialize(); this SFT entry point uses single-process JAX.")
+  else:
+    max_logging.log("pathwaysutils is not installed; continuing with single-process JAX.")
 
-  mt_config = pyconfig.initialize_pydantic(argv)
+  mt_config = pyconfig.initialize_pydantic(argv, skip_jax_distributed_system=True)
   max_utils.print_system_information()
 
   goodput_recorder = create_goodput_recorder(mt_config)
