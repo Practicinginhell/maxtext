@@ -116,8 +116,6 @@ class LazyHFLoader:
     self.shard_map = {}
     self.current_shard_name = None
     self.current_shard_content = {}
-    # Cache for resolved local shard paths
-    self._local_shard_paths = {}
     # Use a lock to serialize heavy RAM operations, but NOT downloads
     self._ram_lock = threading.Lock()
     self._initialize_index()
@@ -185,21 +183,17 @@ class LazyHFLoader:
       # You might need advanced fuzzy matching here if you encounter errors.
       raise ValueError(f"Key {key} not found in HF checkpoint index.")
 
-    if shard_name in self._local_shard_paths:
-      local_path = self._local_shard_paths[shard_name]
+    if self.is_local:
+      local_path = os.path.join(self.model_id, shard_name)
     else:
-      if self.is_local:
-        local_path = os.path.join(self.model_id, shard_name)
-      else:
-        # STEP 1: Download outside the lock.
-        # multiple threads can download different shards at the same time.
-        local_path = hf_hub_download(
-            repo_id=self.model_id,
-            filename=shard_name,
-            token=self.token,
-            revision=self.revision,
-        )
-      self._local_shard_paths[shard_name] = local_path
+      # STEP 1: Download outside the lock.
+      # multiple threads can download different shards at the same time.
+      local_path = hf_hub_download(
+          repo_id=self.model_id,
+          filename=shard_name,
+          token=self.token,
+          revision=self.revision,
+      )
 
     # STEP 2: Lock ONLY the reading into RAM.
     # This prevents multiple threads from simultaneously allocating large chunks of RAM.
@@ -341,6 +335,14 @@ def get_maxtext_model_info(config):
   return maxtext_abstract_dict, abstract_params_treedef
 
 
+def _load_and_apply_hf_source(hf_source, tensor_getter_fn, target_shape, hook_fns):
+  """Loads one HF tensor or a small tuple of tensors and applies conversion hooks."""
+  if isinstance(hf_source, tuple):
+    tensors = [tensor_getter_fn(key) for key in hf_source]
+    return apply_hook_fns(tensors, target_shape, hook_fns)
+  return apply_hook_fns(tensor_getter_fn(hf_source), target_shape, hook_fns)
+
+
 def _build_multi_axis_stacked_tensor(
     hf_source_keys: List[List[str]],
     tensor_getter_fn: Callable[[str], np.ndarray],
@@ -374,8 +376,7 @@ def _build_multi_axis_stacked_tensor(
     layer_tensors_for_expert = []
     # Inner loop iterates through layers for the current expert
     for hf_key_single in layer_keys_for_expert:
-      hf_tensor_numpy = tensor_getter_fn(hf_key_single)
-      processed_hf_tensor = apply_hook_fns(hf_tensor_numpy, mt_slice_shape, hook_fns)
+      processed_hf_tensor = _load_and_apply_hf_source(hf_key_single, tensor_getter_fn, mt_slice_shape, hook_fns)
       layer_tensors_for_expert.append(processed_hf_tensor)
     all_expert_tensors.append(np.stack(layer_tensors_for_expert, axis=0))
   return np.stack(all_expert_tensors, axis=0)
@@ -419,8 +420,7 @@ def _build_single_axis_stacked_tensor(
   mt_slice_shape = tuple(mt_slice_shape_list)
 
   for hf_key_single in hf_source_keys:
-    hf_tensor_numpy = tensor_getter_fn(hf_key_single)
-    processed_hf_tensor = apply_hook_fns(hf_tensor_numpy, mt_slice_shape, hook_fns)
+    processed_hf_tensor = _load_and_apply_hf_source(hf_key_single, tensor_getter_fn, mt_slice_shape, hook_fns)
     tensors_to_stack.append(processed_hf_tensor)
 
   # Stack all processed tensors along the determined axis.
@@ -437,9 +437,9 @@ def _get_hf_loading_function(hf_source_keys_or_key, tensor_getter, hook_fn, mt_t
   """
   load_fn = None
   if not isinstance(hf_source_keys_or_key, list):
-    # Case 1: Single hf key (str)
+    # Case 1: Single hf key (str) or fused source tuple.
     def _loader(getter, key, shape, hook):
-      return apply_hook_fns(getter(key), shape, hook)
+      return _load_and_apply_hf_source(key, getter, shape, hook)
 
     load_fn = partial(
         _loader,

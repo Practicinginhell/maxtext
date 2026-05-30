@@ -239,8 +239,6 @@ ModelName = Literal[
     "gemma3-27b",
     "gemma4-26b",
     "gemma4-31b",
-    "gemma4-e2b",
-    "gemma4-e4b",
     "qwen2.5-1.5b",
     "qwen2.5-7b",
     "qwen2.5-14b",
@@ -262,6 +260,7 @@ ModelName = Literal[
     "qwen3-next-80b-a3b",
     "qwen3-omni-30b-a3b",
     "qwen3-custom-30b-a3b",
+    "qwen3.5-2b",
     "qwen3.5-397b-a17b",
     "gpt3-175b",
     "gpt3-22b",
@@ -560,34 +559,6 @@ class Attention(BaseModel):
   global_num_kv_heads: int = Field(
       0,
       description="If greater than 0, sets the number of KV heads for global attention.",
-  )
-  hidden_size_per_layer_input: NonNegativeInt = Field(
-      0,
-      description=(
-          "Per-Layer-Embedding (PLE) inner dim used by Gemma 4 small models. "
-          "When > 0, each decoder layer adds an extra PLE sub-block at the end."
-      ),
-  )
-  vocab_size_per_layer_input: NonNegativeInt = Field(
-      0,
-      description=(
-          "Vocab size of the per-layer input embedding table used by Gemma 4 small models. "
-          "Defaults to 0 (disabled); typically set equal to `vocab_size`."
-      ),
-  )
-  num_kv_shared_layers: NonNegativeInt = Field(
-      0,
-      description=(
-          "Number of trailing decoder layers that reuse K/V from the last non-shared layer "
-          "of the same attention type (sliding↔sliding, full↔full). Used by Gemma 4 small."
-      ),
-  )
-  use_double_wide_mlp: bool = Field(
-      False,
-      description=(
-          "When True, KV-shared layers double their MLP intermediate size to compensate for "
-          "the missing K/V projections. Used by Gemma 4 small."
-      ),
   )
   attention_sink: bool = Field(False, description="If True, enables attention sinks.")
   float32_qk_product: bool = Field(False, description="In dot-product attention, cast query-key product to fp32.")
@@ -1740,6 +1711,14 @@ class HloDump(BaseModel):
   dump_jaxpr_gcs_dir: PathStr = Field("", description="GCS directory to upload jaxpr dumps.")
 
 
+class StackTrace(BaseModel):
+  """Configuration for collecting and logging stack traces."""
+
+  collect_stack_trace: bool = Field(False, description="Enable periodic stack trace collection.")
+  stack_trace_to_cloud: bool = Field(False, description="Upload stack traces to cloud logging instead of console.")
+  stack_trace_interval_seconds: int = Field(600, description="Frequency of stack trace collection in seconds.")
+
+
 class Metrics(BaseModel):
   """General configuration for metrics and monitoring."""
 
@@ -2313,6 +2292,7 @@ class MaxTextConfig(
     DevelopmentAndDebugging,
     Profiling,
     HloDump,
+    StackTrace,
     # Metrics and Monitoring
     Metrics,
     Goodput,
@@ -2908,16 +2888,7 @@ class MaxTextConfig(
         raise ValueError("Loss-free load balancing is only supported for the DeepSeek decoder block.")
       self.validate_ragged_buffer_factor()
 
-    # Gemma 4 small (E2B / E4B) uses per-layer KV sharing, which is incompatible with nn.scan.
-    if self.model_name in ("gemma4-e2b", "gemma4-e4b") and self.scan_layers:
-      raise ValueError(
-          f"{self.model_name} requires scan_layers=False (per-layer KV sharing is incompatible with nn.scan)."
-      )
     if self.use_multimodal:
-      # Gemma 4 small (E2B / E4B) only supports text for now; multimodal
-      # support is pending clipped-linears in the vision encoder.
-      if self.model_name in ("gemma4-e2b", "gemma4-e4b"):
-        raise ValueError(f"Multimodal is not yet supported for {self.model_name}; only text inputs are supported.")
       valid_mm_models = (
           "gemma3-4b",
           "gemma3-12b",
@@ -2927,7 +2898,6 @@ class MaxTextConfig(
           "llama4-17b-16e",
           "llama4-17b-128e",
           "qwen3-omni-30b-a3b",
-          "qwen3.5-397b-a17b",
       )
       if self.model_name not in valid_mm_models and self.model_name != "default":
         raise ValueError(f"Multimodal is only supported for {valid_mm_models}, not {self.model_name}")
@@ -2960,6 +2930,8 @@ class MaxTextConfig(
         and (self.per_device_batch_size * self.max_target_length) % self.num_vocab_tiling != 0
     ):
       raise ValueError("Per device batch size times sequence length should be divisible by the number of vocab tiles.")
+    if self.num_vocab_tiling > 1 and self.enable_nnx:
+      raise ValueError("We currently don't support vocab tiling on NNX module.")
     if self.context_parallel_size > 1 and self.context_parallel_strategy.lower() == "ring":
       if "gpu" not in self.hardware:
         raise ValueError(
@@ -3092,12 +3064,6 @@ class MaxTextConfig(
       raise ValueError("`share_kv_projections` is not compatible with `fused_qkv`.")
     if self.share_kv_projections and self.attention_type == "mla":
       raise ValueError("`share_kv_projections` is not compatible with `attention_type='mla'`.")
-
-    if self.num_kv_shared_layers > 0:
-      if self.fused_qkv:
-        raise ValueError("`num_kv_shared_layers > 0` is not compatible with `fused_qkv`.")
-      if self.share_kv_projections:
-        raise ValueError("`num_kv_shared_layers > 0` is not compatible with `share_kv_projections`.")
 
     # I. FINAL TYPE CONVERSIONS AND DERIVED LISTS
     ici_map = {

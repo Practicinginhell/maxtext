@@ -144,137 +144,14 @@ gemma4_31b_dict["text_config"].update(
 )
 
 
-gemma4_e2b_dict = {
-    "architectures": ["Gemma4ForConditionalGeneration"],
-    "audio_config": None,
-    "audio_token_id": 258881,
-    "boa_token_id": 256000,
-    "boi_token_id": 255999,
-    "dtype": "bfloat16",
-    "eoa_token_id": 258883,
-    "eoa_token_index": 258883,
-    "eoi_token_id": 258882,
-    "eos_token_id": [1, 106],
-    "image_token_id": 258880,
-    "initializer_range": 0.02,
-    "model_type": "gemma4",
-    "text_config": {
-        "attention_bias": False,
-        "attention_dropout": 0.0,
-        "attention_k_eq_v": False,
-        "bos_token_id": 2,
-        "dtype": "bfloat16",
-        "enable_moe_block": False,
-        "eos_token_id": 1,
-        "expert_intermediate_size": None,
-        "final_logit_softcapping": 30.0,
-        "global_head_dim": 512,
-        "head_dim": 256,
-        "hidden_activation": "gelu_pytorch_tanh",
-        "hidden_size": 1536,
-        "hidden_size_per_layer_input": 256,
-        "initializer_range": 0.02,
-        "intermediate_size": 6144,
-        "layer_types": [
-            "sliding_attention",
-            "sliding_attention",
-            "sliding_attention",
-            "sliding_attention",
-            "full_attention",
-        ]
-        * 7,
-        "max_position_embeddings": 131072,
-        "model_type": "gemma4_text",
-        "num_attention_heads": 8,
-        "num_experts": None,
-        "num_global_key_value_heads": None,
-        "num_hidden_layers": 35,
-        "num_key_value_heads": 1,
-        "num_kv_shared_layers": 20,
-        "pad_token_id": 0,
-        "rms_norm_eps": 1e-06,
-        "rope_parameters": {
-            "full_attention": {
-                "partial_rotary_factor": 0.25,
-                "rope_theta": 1_000_000.0,
-                "rope_type": "proportional",
-            },
-            "sliding_attention": {"rope_theta": 10_000.0, "rope_type": "default"},
-        },
-        "sliding_window": 512,
-        "tie_word_embeddings": True,
-        "top_k_experts": None,
-        "use_bidirectional_attention": None,
-        "use_cache": True,
-        "use_double_wide_mlp": True,
-        "vocab_size": 262144,
-        "vocab_size_per_layer_input": 262144,
-    },
-    "tie_word_embeddings": True,
-    "transformers_version": "5.5.0.dev0",
-    "video_token_id": 258884,
-    "vision_config": {
-        "attention_bias": False,
-        "attention_dropout": 0.0,
-        "default_output_length": 280,
-        "dtype": "bfloat16",
-        "global_head_dim": 64,
-        "head_dim": 64,
-        "hidden_activation": "gelu_pytorch_tanh",
-        "hidden_size": 768,
-        "intermediate_size": 3072,
-        "max_position_embeddings": 131072,
-        "model_type": "gemma4_vision",
-        "num_attention_heads": 12,
-        "num_hidden_layers": 16,
-        "num_key_value_heads": 12,
-        "patch_size": 16,
-        "pooling_kernel_size": 3,
-        "position_embedding_size": 10240,
-        "rms_norm_eps": 1e-06,
-        "rope_parameters": {"rope_theta": 100.0, "rope_type": "default"},
-        "standardize": False,
-        "use_clipped_linears": True,
-    },
-    "vision_soft_tokens_per_image": 280,
-}
-
-
-gemma4_e4b_dict = gemma4_e2b_dict.copy()
-gemma4_e4b_dict["text_config"] = gemma4_e2b_dict["text_config"].copy()
-gemma4_e4b_dict["text_config"].update(
-    {
-        "hidden_size": 2560,
-        "intermediate_size": 10240,
-        "layer_types": [
-            "sliding_attention",
-            "sliding_attention",
-            "sliding_attention",
-            "sliding_attention",
-            "sliding_attention",
-            "full_attention",
-        ]
-        * 7,
-        "num_hidden_layers": 42,
-        "num_key_value_heads": 2,
-        "num_kv_shared_layers": 18,
-        "use_double_wide_mlp": False,
-    }
-)
-
-
 try:
   # Will execute successfully if Transformers is updated with Gemma 4 support
   gemma4_26b_config = transformers.Gemma4Config(**gemma4_26b_dict)
   gemma4_31b_config = transformers.Gemma4Config(**gemma4_31b_dict)
-  gemma4_e2b_config = transformers.Gemma4Config(**gemma4_e2b_dict)
-  gemma4_e4b_config = transformers.Gemma4Config(**gemma4_e4b_dict)
 except AttributeError:
   # Graceful fallback to raw dict-based PTConfig if Gemma 4 natively is missing
   gemma4_26b_config = PTConfig(**gemma4_26b_dict)  # pytype: disable=wrong-arg-types
   gemma4_31b_config = PTConfig(**gemma4_31b_dict)  # pytype: disable=wrong-arg-types
-  gemma4_e2b_config = PTConfig(**gemma4_e2b_dict)  # pytype: disable=wrong-arg-types
-  gemma4_e4b_config = PTConfig(**gemma4_e4b_dict)  # pytype: disable=wrong-arg-types
 
 
 gemma3_4b_config = transformers.Gemma3Config(
@@ -1200,6 +1077,76 @@ qwen3_next_80b_a3b_dict = {
 qwen3_next_80b_a3b_config = transformers.Qwen3NextConfig(**qwen3_next_80b_a3b_dict)
 
 
+# from https://huggingface.co/Qwen/Qwen3.5-2B/blob/main/config.json
+qwen3_5_2b_text_dict = {
+    "attention_bias": False,
+    "attention_dropout": 0.0,
+    "attn_output_gate": True,
+    "dtype": "bfloat16",
+    "eos_token_id": 248044,
+    "full_attention_interval": 4,
+    "head_dim": 256,
+    "hidden_act": "silu",
+    "hidden_size": 2048,
+    "initializer_range": 0.02,
+    "intermediate_size": 6144,
+    "layer_types": ["linear_attention", "linear_attention", "linear_attention", "full_attention"] * 6,
+    "linear_conv_kernel_dim": 4,
+    "linear_key_head_dim": 128,
+    "linear_num_key_heads": 16,
+    "linear_num_value_heads": 16,
+    "linear_value_head_dim": 128,
+    "max_position_embeddings": 262144,
+    "mlp_only_layers": [],
+    "model_type": "qwen3_5_text",
+    "mtp_num_hidden_layers": 1,
+    "mtp_use_dedicated_embeddings": False,
+    "num_attention_heads": 8,
+    "num_hidden_layers": 24,
+    "num_key_value_heads": 2,
+    "rms_norm_eps": 1e-6,
+    "tie_word_embeddings": True,
+    "use_cache": True,
+    "vocab_size": 248320,
+    "mamba_ssm_dtype": "float32",
+    "rope_parameters": {
+        "mrope_interleaved": True,
+        "mrope_section": [11, 11, 10],
+        "rope_type": "default",
+        "rope_theta": 10000000,
+        "partial_rotary_factor": 0.25,
+    },
+}
+
+qwen3_5_2b_config = PTConfig(
+    architectures=["Qwen3_5ForConditionalGeneration"],
+    image_token_id=248056,
+    model_type="qwen3_5",
+    text_config=qwen3_5_2b_text_dict,
+    tie_word_embeddings=True,
+    transformers_version="4.57.0.dev0",
+    video_token_id=248057,
+    vision_config={
+        "deepstack_visual_indexes": [],
+        "depth": 24,
+        "hidden_act": "gelu_pytorch_tanh",
+        "hidden_size": 1024,
+        "in_channels": 3,
+        "initializer_range": 0.02,
+        "intermediate_size": 4096,
+        "model_type": "qwen3_5",
+        "num_heads": 16,
+        "num_position_embeddings": 2304,
+        "out_hidden_size": 2048,
+        "patch_size": 16,
+        "spatial_merge_size": 2,
+        "temporal_patch_size": 2,
+    },
+    vision_end_token_id=248054,
+    vision_start_token_id=248053,
+)
+
+
 # from https://huggingface.co/mistralai/Mixtral-8x7B-Instruct-v0.1/blob/main/config.json
 mixtral_8x7b_dict = {
     "architectures": ["MixtralForCausalLM"],
@@ -1308,8 +1255,6 @@ HF_MODEL_CONFIGS = {
     "gemma3-27b": gemma3_27b_config,
     "gemma4-26b": gemma4_26b_config,
     "gemma4-31b": gemma4_31b_config,
-    "gemma4-e2b": gemma4_e2b_config,
-    "gemma4-e4b": gemma4_e4b_config,
     "qwen2.5-1.5b": qwen25_1_5b_config,
     "qwen2.5-7b": qwen25_7b_config,
     "qwen2.5-14b": qwen25_14b_config,
@@ -1332,6 +1277,7 @@ HF_MODEL_CONFIGS = {
     "qwen3-30b-a3b-base": qwen3_30b_a3b_thinking_2507_config,
     "qwen3-235b-a22b": qwen3_235b_a22b_thinking_2507_config,
     "qwen3-480b-a35b": qwen3_coder_480b_a35b_config,
+    "qwen3.5-2b": qwen3_5_2b_config,
     "deepseek2-16b": deepseek2_16b_config,
     "deepseek3-671b": deepseek3_671b_config,
     "deepseek3.2-671b": deepseek32_671b_config,
